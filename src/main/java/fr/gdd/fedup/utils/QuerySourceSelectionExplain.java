@@ -4,6 +4,7 @@ import fr.gdd.fedup.FedUP;
 import fr.gdd.fedup.summary.Summary;
 import fr.gdd.fedup.summary.SummaryFactory;
 import org.apache.commons.cli.*;
+import org.apache.jena.base.Sys;
 import org.apache.jena.dboe.base.file.Location;
 
 import java.io.*;
@@ -17,6 +18,8 @@ public class QuerySourceSelectionExplain {
         // Declare options
         Options options = new Options();
 
+        options.addOption(new Option("h", "help", false, "print this message"));
+
         options.addOption(new Option("q", "query", true,
                 "The input query file"));
 
@@ -29,9 +32,25 @@ public class QuerySourceSelectionExplain {
         options.addOption(new Option("f", "federation", true,
                 "Path(s) to federation file"));
 
+        for(String arg: args) {
+            System.out.println(arg);
+        }
+
         // Parse options
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd = parser.parse(options, args);
+
+        if (cmd.hasOption("help") ||
+                cmd.getOptions().length==0 ||
+                !cmd.hasOption("query") ||
+                !cmd.hasOption("output") ||
+                !cmd.hasOption("summary") ||
+                !cmd.hasOption("federation")
+        ) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("fedup-explain -q <path> -o <path> -s <path> -f <path>", options);
+            return;
+        }
 
         // Read input file into a string
         Path queryInputFileName = Path.of(cmd.getOptionValue("query"));
@@ -58,7 +77,6 @@ public class QuerySourceSelectionExplain {
         PrintWriter writer = new PrintWriter(cmd.getOptionValue("output"));
         writer.println(planAsString);
         writer.close();
-
 
 
     }
