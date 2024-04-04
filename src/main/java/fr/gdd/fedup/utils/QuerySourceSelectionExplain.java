@@ -1,11 +1,15 @@
 package fr.gdd.fedup.utils;
 
+import fr.gdd.fedqpl.SPARQL2String;
 import fr.gdd.fedup.FedUP;
 import fr.gdd.fedup.summary.Summary;
 import fr.gdd.fedup.summary.SummaryFactory;
 import org.apache.commons.cli.*;
 import org.apache.jena.base.Sys;
 import org.apache.jena.dboe.base.file.Location;
+import org.apache.jena.query.QueryFactory;
+import org.apache.jena.sparql.algebra.Algebra;
+import org.apache.jena.sparql.algebra.Op;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -32,9 +36,11 @@ public class QuerySourceSelectionExplain {
         options.addOption(new Option("f", "federation", true,
                 "Path(s) to federation file"));
 
-        for(String arg: args) {
-            System.out.println(arg);
-        }
+        options.addOption(new Option("r", "remote", true,
+                "The remote service"));
+
+        options.addOption(new Option(null, "format", true,
+                "union/values"));
 
         // Parse options
         CommandLineParser parser = new DefaultParser();
@@ -52,6 +58,9 @@ public class QuerySourceSelectionExplain {
             return;
         }
 
+        // Assign default value to remote:
+        String remote = cmd.hasOption("remote") ? cmd.getOptionValue("remote") : "";
+
         // Read input file into a string
         Path queryInputFileName = Path.of(cmd.getOptionValue("query"));
         String query = Files.readString(queryInputFileName);
@@ -68,13 +77,21 @@ public class QuerySourceSelectionExplain {
         Summary summary = SummaryFactory.createIdentity(Location.create(cmd.getOptionValue("summary")));
 
         FedUP fedup = new FedUP(summary, endpoints)
-                .shouldNotFactorize()
-                .modifyEndpoints(e-> String.format("http://localhost:5555/sparql?default-graph-uri=%s%s", (e.substring(0,e.length()-1)), "/"));
+                .modifyEndpoints(e-> String.format("%s%s", remote, e));
 
+        // Values or Union?
+        String format = cmd.hasOption("format") ? cmd.getOptionValue("format") : "union";
+        if (format.equals("values")){
+            fedup.shouldFactorize();
+        } else if (format.equals("union")) {
+            fedup.shouldNotFactorize();
+        }
+
+        // Explain using FedUP
         String planAsString = fedup.query(query);
 
         // Write output
-        PrintWriter writer = new PrintWriter(cmd.getOptionValue("output"));
+        PrintWriter writer = new PrintWriter( new FileOutputStream(cmd.getOptionValue("output"), false));
         writer.println(planAsString);
         writer.close();
 
