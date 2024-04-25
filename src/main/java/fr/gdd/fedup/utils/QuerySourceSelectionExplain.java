@@ -1,10 +1,13 @@
 package fr.gdd.fedup.utils;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gdd.fedqpl.SPARQL2String;
 import fr.gdd.fedup.FedUP;
 import fr.gdd.fedup.summary.Summary;
 import fr.gdd.fedup.summary.SummaryFactory;
 import org.apache.commons.cli.*;
+import org.apache.jena.atlas.json.io.parser.JSONParser;
 import org.apache.jena.base.Sys;
 import org.apache.jena.dboe.base.file.Location;
 import org.apache.jena.query.QueryFactory;
@@ -14,6 +17,7 @@ import org.apache.jena.sparql.algebra.Op;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -36,8 +40,8 @@ public class QuerySourceSelectionExplain {
         options.addOption(new Option("f", "federation", true,
                 "Path(s) to federation file"));
 
-        options.addOption(new Option("r", "remote", true,
-                "The remote service"));
+        options.addOption(new Option("m", "mapping", true,
+                "Rename mapping"));
 
         options.addOption(new Option(null, "format", true,
                 "union/values"));
@@ -58,8 +62,19 @@ public class QuerySourceSelectionExplain {
             return;
         }
 
-        // Assign default value to remote:
-        String remote = cmd.hasOption("remote") ? cmd.getOptionValue("remote") : "";
+        // Read the mapping file as JSON:
+        if (cmd.hasOption("mapping")) {
+            String mappingFile = cmd.getOptionValue("mapping");
+        }
+
+        // Read the mapping file as JSON into a HashMap
+        HashMap<String, String> endpointMapping = new HashMap<>();
+        if (cmd.hasOption("mapping")) {
+            String mappingFile = cmd.getOptionValue("mapping");
+            ObjectMapper objectMapper = new ObjectMapper();
+            endpointMapping = objectMapper.readValue(new File(mappingFile), new TypeReference<HashMap<String, String>>() {});
+        }
+
 
         // Read input file into a string
         Path queryInputFileName = Path.of(cmd.getOptionValue("query"));
@@ -77,7 +92,7 @@ public class QuerySourceSelectionExplain {
         Summary summary = SummaryFactory.createIdentity(Location.create(cmd.getOptionValue("summary")));
 
         FedUP fedup = new FedUP(summary, endpoints)
-                .modifyEndpoints(e-> String.format("%s%s", remote, e));
+                .modifyEndpoints(endpointMapping::get);
 
         // Values or Union?
         String format = cmd.hasOption("format") ? cmd.getOptionValue("format") : "union";
