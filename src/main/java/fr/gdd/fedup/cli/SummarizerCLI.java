@@ -11,7 +11,13 @@ import org.apache.jena.http.auth.AuthEnv;
 import org.apache.jena.query.*;
 import org.apache.jena.rdfconnection.RDFConnection;
 import org.apache.jena.rdfconnection.RDFConnectionRemote;
+import org.apache.jena.riot.resultset.ResultSetLang;
+import org.apache.jena.riot.resultset.ResultSetReaderRegistry;
 import org.apache.jena.sparql.core.Quad;
+import org.apache.jena.sparql.core.Var;
+import org.apache.jena.sparql.exec.QueryExec;
+import org.apache.jena.sparql.exec.RowSet;
+import org.apache.jena.sparql.exec.http.QueryExecHTTP;
 import org.apache.jena.sparql.modify.request.UpdateModify;
 import org.apache.jena.tdb2.TDB2Factory;
 import org.apache.jena.update.UpdateRequest;
@@ -97,6 +103,13 @@ public class SummarizerCLI {
     public String filterRegex = ".*"; // by default allows everything
 
     public static void main(String[] args) throws ParseException {
+        // important to initialize these two now or else they might not be
+        // initialized when getGraphsFromService()'s SELECT is performed…
+        // it cannot accept nor parse the received results. (Same fix as
+        // FedUPCLI/FedUPServerCLI already apply; SummarizerCLI was missing it.)
+        ResultSetLang.init();
+        ResultSetReaderRegistry.init();
+
         SummarizerCLI options = new SummarizerCLI();
         try {
             new picocli.CommandLine(options).parseArgs(args);
@@ -274,22 +287,31 @@ public class SummarizerCLI {
      * @return The set of graphs served by the service.
      */
     public static Set<String> getGraphsFromService(URI uri) {
-        Query getGraphsQuery = QueryFactory.create(String.format("""
-                           SELECT DISTINCT ?g WHERE { SERVICE <%s> {
-                             SELECT DISTINCT ?g WHERE {GRAPH ?g {?s ?p ?o}}
-                           } }
-                           """, uri));
+        Query getGraphsQuery = QueryFactory.create("SELECT DISTINCT ?g WHERE {GRAPH ?g {?s ?p ?o}}");
 
-        try (QueryExecution qexec = QueryExecutionFactory.create(getGraphsQuery, DatasetFactory.empty())) {
-            ResultSet results = qexec.execSelect();
+        // Queried directly (not wrapped in a SERVICE clause against an empty
+        // dataset) so we can force the "application/json" accept header:
+        // Jena 5.5.0's WebContent.contentTypeToLangResultSet() only recognizes
+        // the short "application/json"/"application/xml" content types, not
+        // the correct/standard "application/sparql-results+json" that
+        // spec-compliant endpoints (e.g. Fuseki-based ones) actually return,
+        // so content negotiation over SERVICE would otherwise throw
+        // "... which is not recognized for SELECT queries" even though the
+        // endpoint's response is entirely valid.
+        try (QueryExec qexec = QueryExecHTTP.service(uri.toString())
+                .query(getGraphsQuery)
+                .acceptHeader("application/json")
+                .build()) {
+            RowSet results = qexec.select();
             Set<String> onlyGraphs = new HashSet<>();
+            Var g = Var.alloc("g");
             while (results.hasNext()) {
-                QuerySolution result = results.nextSolution();
-                onlyGraphs.add(result.get("?g").toString());
+                onlyGraphs.add(results.next().get(g).toString());
             }
             return onlyGraphs;
         } catch (Exception e) {
             System.err.println("Could not get graphs from " + uri);
+            e.printStackTrace();
         }
         return null;
     }
